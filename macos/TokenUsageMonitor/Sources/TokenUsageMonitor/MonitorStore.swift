@@ -435,7 +435,13 @@ final class MonitorStore: ObservableObject {
     private func refreshDeepSeekAccount(apiKeyOverride: String? = nil, saveOnSuccess: Bool = false) {
         let apiKey: String
         do {
-            guard let value = apiKeyOverride ?? keychain.read(account: Keys.deepSeekKeyAccount),
+            let candidate: String?
+            if let apiKeyOverride {
+                candidate = apiKeyOverride
+            } else {
+                candidate = try keychain.read(account: Keys.deepSeekKeyAccount)
+            }
+            guard let value = candidate,
                   !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 DispatchQueue.main.async {
                     self.deepSeekConfigured = false
