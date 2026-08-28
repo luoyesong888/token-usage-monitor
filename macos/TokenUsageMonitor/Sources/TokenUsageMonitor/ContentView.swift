@@ -9,6 +9,7 @@ struct MonitorPanel: View {
     @State private var showsSettings = false
     @State private var showsSupplementalLimits = false
     @State private var hoveredDailyUsage: DailyUsage?
+    @State private var deepSeekAPIKey = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,6 +23,9 @@ struct MonitorPanel: View {
         }
         .frame(minWidth: 390, idealWidth: 420, minHeight: 540, idealHeight: 640)
         .background(Color(nsColor: .windowBackgroundColor))
+        .onChange(of: monitor.deepSeekConfigured) { configured in
+            if configured { deepSeekAPIKey = "" }
+        }
     }
 
     private var header: some View {
@@ -126,8 +130,8 @@ struct MonitorPanel: View {
             }
 
             if let account = monitor.snapshot.account { summaryCard(account) }
-            if !monitor.taskRecords.isEmpty { taskUsageCard }
             apiUsageCard
+            if !monitor.taskRecords.isEmpty { taskUsageCard }
             if !monitor.snapshot.dailyUsage.isEmpty { historyChart }
 
             if monitor.snapshot.availableResetCredits > 0 {
@@ -334,9 +338,10 @@ struct MonitorPanel: View {
     }
 
     private var apiUsageCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("外部 API 用量").font(.subheadline.weight(.semibold))
+                Label("模型 API 统计", systemImage: "point.3.connected.trianglepath.dotted")
+                    .font(.subheadline.weight(.semibold))
                 Spacer()
                 HStack(spacing: 4) {
                     Circle().fill(monitor.apiMonitorAvailable ? Color.green : Color.orange).frame(width: 6, height: 6)
@@ -345,35 +350,31 @@ struct MonitorPanel: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             }
+
+            deepSeekAccountRow
+            Divider()
+
             ForEach(monitor.apiQuotaSummaries) { quota in
                 apiQuotaRow(quota)
                 if quota.id != monitor.apiQuotaSummaries.last?.id { Divider() }
             }
             Divider()
             if monitor.apiRecords.isEmpty {
-                Text("支持 OpenAI、DeepSeek 及 OpenAI 兼容模型；记录 API 响应中的 usage，不保存提示词、回复或密钥。")
+                Text("把每次 API 响应的 usage 发送到本机端点后，会按平台、模型和任务累计 Token。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                ForEach(Array(monitor.apiRecords.prefix(8))) { record in
-                    HStack(spacing: 9) {
-                        Text(record.provider.uppercased())
-                            .font(.system(size: 8, weight: .bold))
-                            .padding(.horizontal, 5).padding(.vertical, 3)
-                            .background(Color.purple.opacity(0.13), in: Capsule())
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(record.displayTaskName).font(.caption.weight(.medium)).lineLimit(1)
-                            Text("\(record.model) · \(record.capturedAt, style: .relative)")
-                                .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                        Spacer(minLength: 6)
-                        Text(compact(record.totalTokens))
-                            .font(.caption.monospacedDigit().weight(.semibold))
-                        Text("tokens").font(.caption2).foregroundStyle(.secondary)
-                    }
-                    if record.id != monitor.apiRecords.prefix(8).last?.id { Divider() }
+                Text("最近 API 调用").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                ForEach(Array(monitor.apiRecords.prefix(5))) { record in
+                    apiRecordRow(record)
+                    if record.id != monitor.apiRecords.prefix(5).last?.id { Divider() }
                 }
+            }
+
+            if !monitor.deepSeekConfigured {
+                Button("连接 DeepSeek API") { showsSettings = true }
+                    .font(.caption.weight(.medium))
             }
         }
         .padding(12)
@@ -416,6 +417,83 @@ struct MonitorPanel: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+            if let summary = monitor.apiProviderSummaries.first(where: { $0.provider == quota.provider }) {
+                HStack(spacing: 0) {
+                    metric(title: "API 调用", value: "\(summary.requestCount) 次")
+                    Divider().frame(height: 30)
+                    metric(title: "输入", value: compact(summary.inputTokens))
+                    Divider().frame(height: 30)
+                    metric(title: "输出", value: compact(summary.outputTokens))
+                    Divider().frame(height: 30)
+                    metric(title: "缓存命中", value: compact(summary.cachedInputTokens))
+                }
+                if summary.reasoningTokens > 0 {
+                    Text("推理 Token：\(compact(summary.reasoningTokens))")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var deepSeekAccountRow: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                HStack(spacing: 7) {
+                    Text("DS")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.blue)
+                        .frame(width: 25, height: 19)
+                        .background(Color.blue.opacity(0.12), in: Capsule())
+                    Text("DeepSeek 账户").font(.caption.weight(.semibold))
+                }
+                Spacer()
+                if monitor.deepSeekIsRefreshing {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Circle()
+                        .fill(monitor.deepSeekConfigured ? Color.green : Color.secondary.opacity(0.45))
+                        .frame(width: 6, height: 6)
+                    Text(monitor.deepSeekConfigured ? "已连接" : "未连接")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let account = monitor.deepSeekAccount {
+                HStack(spacing: 0) {
+                    metric(title: "余额", value: deepSeekBalanceText(account))
+                    Divider().frame(height: 32)
+                    metric(title: "可用模型", value: "\(account.models.count) 个")
+                    Divider().frame(height: 32)
+                    metric(title: "账户状态", value: account.isAvailable ? "可调用" : "余额不足")
+                }
+                Text("余额与模型更新于 \(account.updatedAt, style: .relative)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else if let error = monitor.deepSeekError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func apiRecordRow(_ record: APIUsageRecord) -> some View {
+        HStack(spacing: 9) {
+            Text(record.provider.uppercased())
+                .font(.system(size: 8, weight: .bold))
+                .padding(.horizontal, 5).padding(.vertical, 3)
+                .background(Color.purple.opacity(0.13), in: Capsule())
+            VStack(alignment: .leading, spacing: 2) {
+                Text(record.displayTaskName).font(.caption.weight(.medium)).lineLimit(1)
+                Text("\(record.model) · \(record.capturedAt, style: .relative)")
+                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 6)
+            Text(compact(record.totalTokens))
+                .font(.caption.monospacedDigit().weight(.semibold))
+            Text("tokens").font(.caption2).foregroundStyle(.secondary)
         }
     }
 
@@ -453,6 +531,50 @@ struct MonitorPanel: View {
 
             Group {
                 Divider()
+                Text("DeepSeek API").font(.headline)
+                if monitor.deepSeekConfigured {
+                    HStack {
+                        Label("API Key 已保存在 macOS 钥匙串", systemImage: "checkmark.shield.fill")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                        Spacer()
+                        if monitor.deepSeekIsRefreshing { ProgressView().controlSize(.mini) }
+                    }
+                    if let account = monitor.deepSeekAccount {
+                        Text("余额：\(deepSeekBalanceText(account)) · 可用模型：\(account.models.joined(separator: "、"))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    HStack {
+                        Button("立即刷新") { monitor.refreshDeepSeek() }
+                            .disabled(monitor.deepSeekIsRefreshing)
+                        Button("断开并删除 Key", role: .destructive) {
+                            monitor.disconnectDeepSeek()
+                            deepSeekAPIKey = ""
+                        }
+                    }
+                } else {
+                    SecureField("粘贴 DeepSeek API Key", text: $deepSeekAPIKey)
+                        .textFieldStyle(.roundedBorder)
+                    Button("连接并验证") {
+                        monitor.connectDeepSeek(apiKey: deepSeekAPIKey)
+                    }
+                    .disabled(
+                        deepSeekAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || monitor.deepSeekIsRefreshing
+                    )
+                    Text("验证成功后只保存到 macOS 钥匙串，用于读取余额和可用模型。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let error = monitor.deepSeekError {
+                    Text(error).font(.caption).foregroundStyle(.orange)
+                }
+            }
+
+            Group {
+                Divider()
                 Text("API 监控").font(.headline)
                 Picker("菜单栏圆环显示", selection: $monitor.menuQuotaSource) {
                     ForEach(MenuQuotaSource.allCases) { source in
@@ -482,7 +604,7 @@ struct MonitorPanel: View {
                         NSPasteboard.general.setString("http://127.0.0.1:47821/v1/usage", forType: .string)
                     }
                 }
-                Text("将 OpenAI、DeepSeek 或兼容 API 响应中的 usage 对象发送到此端点，即可按模型和任务记录。API Key 不应发送给监控器。")
+                Text("将 OpenAI、DeepSeek 或兼容 API 响应中的 usage 对象发送到此端点，即可按平台、模型和任务记录。DeepSeek 官方不提供历史 Token 查询接口，因此每次调用后需上报 usage；API Key 不应发送给这个端点。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -561,6 +683,11 @@ struct MonitorPanel: View {
               let month = Int(components[1]),
               let day = Int(components[2]) else { return value }
         return "\(month)/\(day)"
+    }
+
+    private func deepSeekBalanceText(_ account: DeepSeekAccountSnapshot) -> String {
+        guard !account.balances.isEmpty else { return "—" }
+        return account.balances.map { "\($0.currency) \($0.totalBalance)" }.joined(separator: " / ")
     }
 
     private var supplementalWindows: [RateWindow] {

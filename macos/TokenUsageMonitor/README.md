@@ -24,6 +24,8 @@ Native macOS 13+ menu-bar companion for the Token Usage Monitor Codex plugin.
 - Local usage ingestion for OpenAI, DeepSeek, and compatible API responses
 - OpenAI/DeepSeek Token budgets with used and remaining quota displays
 - Selectable Codex, OpenAI, or DeepSeek quota source for the menu-bar ring
+- DeepSeek balance and model discovery with API keys stored in macOS Keychain
+- Per-provider API calls, input/output/cache/reasoning tokens, and recent activity
 - No prompt text, response text, email address, or API key collection
 
 ## Build
@@ -39,3 +41,11 @@ Codex session, and macOS 13 or newer.
 
 The app is ad-hoc signed for local use. Public distribution requires an Apple
 Developer ID signature and notarization.
+
+## DeepSeek
+
+Open settings, paste a DeepSeek API key, and choose **连接并验证**. The app uses
+the key only to call DeepSeek's read-only balance and model endpoints and stores
+it in macOS Keychain. Token history is accumulated from each API response's
+`usage` object through the local `http://127.0.0.1:47821/v1/usage` endpoint; the
+included `scripts/api_usage_client.py` helper performs this metadata-only step.

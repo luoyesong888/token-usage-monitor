@@ -7,7 +7,12 @@ final class MonitorStore: ObservableObject {
     @Published private(set) var taskRecords: [TaskUsageRecord]
     @Published private(set) var apiRecords: [APIUsageRecord] = []
     @Published private(set) var apiUsageTotals: [String: Int] = [:]
+    @Published private(set) var apiProviderSummaries: [APIProviderSummary] = []
     @Published private(set) var apiMonitorAvailable = false
+    @Published private(set) var deepSeekAccount: DeepSeekAccountSnapshot?
+    @Published private(set) var deepSeekConfigured = false
+    @Published private(set) var deepSeekIsRefreshing = false
+    @Published private(set) var deepSeekError: String?
     @Published private(set) var connectionState: MonitorConnectionState = .starting
     @Published private(set) var lastError: String?
     @Published private(set) var isRefreshing = false
@@ -45,6 +50,7 @@ final class MonitorStore: ObservableObject {
         static let openAIBudget = "apiBudget.openai"
         static let deepSeekBudget = "apiBudget.deepseek"
         static let menuQuotaSource = "menu.quotaSource"
+        static let deepSeekKeyAccount = "provider.deepseek.api-key"
     }
 
     private let defaults = UserDefaults.standard
@@ -52,6 +58,7 @@ final class MonitorStore: ObservableObject {
     private let workerKey = DispatchSpecificKey<Bool>()
     private var timer: DispatchSourceTimer?
     private var taskTimer: DispatchSourceTimer?
+    private var providerTimer: DispatchSourceTimer?
     private var client: AppServerClient?
     private var apiServerProcess: Process?
     private var consecutiveQuotaFailures = 0
@@ -59,6 +66,7 @@ final class MonitorStore: ObservableObject {
     private let snapshotURL: URL
     private let taskRecordsURL: URL
     private let notificationDelegate = NotificationDelegate()
+    private let keychain = KeychainStore()
     private var stopped = false
     private var terminationObserver: NSObjectProtocol?
     private var updateCheckTask: URLSessionDataTask?
@@ -91,6 +99,7 @@ final class MonitorStore: ObservableObject {
         openAIBudgetText = defaults.string(forKey: Keys.openAIBudget) ?? ""
         deepSeekBudgetText = defaults.string(forKey: Keys.deepSeekBudget) ?? ""
         menuQuotaSource = MenuQuotaSource(rawValue: defaults.string(forKey: Keys.menuQuotaSource) ?? "") ?? .codex
+        deepSeekConfigured = (try? keychain.read(account: Keys.deepSeekKeyAccount)) != nil
         worker.setSpecific(key: workerKey, value: true)
         UNUserNotificationCenter.current().delegate = notificationDelegate
         terminationObserver = NotificationCenter.default.addObserver(
@@ -183,6 +192,12 @@ final class MonitorStore: ObservableObject {
         taskTimer.setEventHandler { [weak self] in self?.collectTasks() }
         self.taskTimer = taskTimer
         taskTimer.resume()
+
+        let providerTimer = DispatchSource.makeTimerSource(queue: worker)
+        providerTimer.schedule(deadline: .now() + 1, repeating: 300)
+        providerTimer.setEventHandler { [weak self] in self?.refreshDeepSeekAccount() }
+        self.providerTimer = providerTimer
+        providerTimer.resume()
         worker.async { [weak self] in self?.startAPIUsageServer() }
     }
 
@@ -192,6 +207,8 @@ final class MonitorStore: ObservableObject {
         timer = nil
         taskTimer?.cancel()
         taskTimer = nil
+        providerTimer?.cancel()
+        providerTimer = nil
         updateCheckTask?.cancel()
         updateCheckTask = nil
         let closeClient = { [weak self] in
@@ -212,6 +229,26 @@ final class MonitorStore: ObservableObject {
         worker.async { [weak self] in
             self?.collectTasks()
             self?.collect(forceReconnect: false)
+            self?.refreshDeepSeekAccount()
+        }
+    }
+
+    func connectDeepSeek(apiKey: String) {
+        refreshDeepSeekAccount(apiKeyOverride: apiKey, saveOnSuccess: true)
+    }
+
+    func refreshDeepSeek() {
+        worker.async { [weak self] in self?.refreshDeepSeekAccount() }
+    }
+
+    func disconnectDeepSeek() {
+        do {
+            try keychain.delete(account: Keys.deepSeekKeyAccount)
+            deepSeekConfigured = false
+            deepSeekAccount = nil
+            deepSeekError = nil
+        } catch {
+            deepSeekError = error.localizedDescription
         }
     }
 
@@ -382,14 +419,67 @@ final class MonitorStore: ObservableObject {
             persistTaskRecords(records)
             let apiRecords = readAPIUsageRecords()
             let apiUsageTotals = readAPIUsageTotals()
+            let providerSummaries = readAPIProviderSummaries()
             DispatchQueue.main.async {
                 self.taskRecords = records
                 self.apiRecords = apiRecords
                 self.apiUsageTotals = apiUsageTotals
+                self.apiProviderSummaries = providerSummaries
             }
         } catch {
             // Task history is an enhancement. Quota monitoring continues if the
             // local Codex state database is temporarily busy or unavailable.
+        }
+    }
+
+    private func refreshDeepSeekAccount(apiKeyOverride: String? = nil, saveOnSuccess: Bool = false) {
+        let apiKey: String
+        do {
+            guard let value = apiKeyOverride ?? keychain.read(account: Keys.deepSeekKeyAccount),
+                  !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                DispatchQueue.main.async {
+                    self.deepSeekConfigured = false
+                    self.deepSeekIsRefreshing = false
+                }
+                return
+            }
+            apiKey = value
+        } catch {
+            DispatchQueue.main.async {
+                self.deepSeekIsRefreshing = false
+                self.deepSeekError = error.localizedDescription
+            }
+            return
+        }
+
+        DispatchQueue.main.async {
+            self.deepSeekIsRefreshing = true
+            self.deepSeekError = nil
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let client = try DeepSeekClient(apiKey: apiKey)
+                let account = try await client.fetchAccountSnapshot()
+                if saveOnSuccess {
+                    try self.keychain.save(
+                        apiKey.trimmingCharacters(in: .whitespacesAndNewlines),
+                        account: Keys.deepSeekKeyAccount
+                    )
+                }
+                await MainActor.run {
+                    self.deepSeekConfigured = true
+                    self.deepSeekAccount = account
+                    self.deepSeekIsRefreshing = false
+                    self.deepSeekError = nil
+                }
+            } catch {
+                await MainActor.run {
+                    self.deepSeekIsRefreshing = false
+                    self.deepSeekError = error.localizedDescription
+                    if saveOnSuccess { self.deepSeekConfigured = false }
+                }
+            }
         }
     }
 
@@ -536,6 +626,50 @@ final class MonitorStore: ObservableObject {
             })
         } catch {
             return [:]
+        }
+    }
+
+    private func readAPIProviderSummaries() -> [APIProviderSummary] {
+        let database = dataDirectory.appendingPathComponent("usage.sqlite3")
+        guard FileManager.default.fileExists(atPath: database.path) else { return [] }
+        let query = """
+        SELECT LOWER(provider) AS provider, COUNT(*) AS requestCount,
+               COALESCE(SUM(input_tokens), 0) AS inputTokens,
+               COALESCE(SUM(cached_input_tokens), 0) AS cachedInputTokens,
+               COALESCE(SUM(output_tokens), 0) AS outputTokens,
+               COALESCE(SUM(reasoning_tokens), 0) AS reasoningTokens,
+               COALESCE(SUM(total_tokens), 0) AS totalTokens,
+               MAX(captured_at) AS latestAt
+        FROM api_usage GROUP BY LOWER(provider) ORDER BY totalTokens DESC, provider ASC;
+        """
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+        process.arguments = ["-readonly", "-json", database.path, query]
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0, !data.isEmpty,
+                  let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+            return rows.compactMap { row in
+                guard let provider = row.string("provider"),
+                      let requestCount = row.integer("requestCount") else { return nil }
+                return APIProviderSummary(
+                    provider: provider,
+                    requestCount: requestCount,
+                    inputTokens: row.integer("inputTokens") ?? 0,
+                    cachedInputTokens: row.integer("cachedInputTokens") ?? 0,
+                    outputTokens: row.integer("outputTokens") ?? 0,
+                    reasoningTokens: row.integer("reasoningTokens") ?? 0,
+                    totalTokens: row.integer("totalTokens") ?? 0,
+                    latestAt: row.integer("latestAt").map { Date(timeIntervalSince1970: TimeInterval($0)) }
+                )
+            }
+        } catch {
+            return []
         }
     }
 

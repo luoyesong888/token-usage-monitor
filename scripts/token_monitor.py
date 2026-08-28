@@ -362,6 +362,21 @@ class UsageStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def api_usage_summary(self, days: int = 30) -> list[dict[str, Any]]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT LOWER(provider) AS provider, COUNT(*) AS request_count, "
+                "COALESCE(SUM(input_tokens), 0) AS input_tokens, "
+                "COALESCE(SUM(cached_input_tokens), 0) AS cached_input_tokens, "
+                "COALESCE(SUM(output_tokens), 0) AS output_tokens, "
+                "COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens, "
+                "COALESCE(SUM(total_tokens), 0) AS total_tokens, MAX(captured_at) AS latest_at "
+                "FROM api_usage WHERE captured_at >= strftime('%s', 'now', ?) "
+                "GROUP BY LOWER(provider) ORDER BY total_tokens DESC, provider ASC",
+                (f"-{max(0, days - 1)} days",),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def codex_task_history(self, limit: int = 100) -> list[dict[str, Any]]:
         override = os.environ.get("CODEX_STATE_DB")
         if override:

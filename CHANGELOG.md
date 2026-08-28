@@ -2,6 +2,21 @@
 
 All notable changes to Token监测 are documented here.
 
+## [1.7.0] - 2026-08-28
+
+### Added
+
+- Optional DeepSeek account connection with API keys stored in macOS Keychain.
+- Read-only DeepSeek balance, account availability, and current-model discovery.
+- Provider summaries for calls, input, output, cache-hit, reasoning, and total Tokens.
+- A metadata-only Python helper for recording OpenAI-compatible response usage.
+- A loopback `/v1/summary` endpoint and provider summaries in the MCP history tool.
+
+### Security
+
+- DeepSeek credentials never enter the SQLite usage database or loopback ingestion payloads.
+- Prompt and response bodies remain excluded from all usage records.
+
 ## [1.6.2] - 2026-08-25
 
 ### Fixed

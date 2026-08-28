@@ -191,6 +191,7 @@ class MCPServer:
                 "days": days,
                 "records": rows,
                 "totalTokens": sum(row["total_tokens"] for row in rows),
+                "byProvider": self.monitor.store.api_usage_summary(days),
             }
         if name == "get_task_usage_history":
             limit = max(1, min(1000, int(arguments.get("limit", 100))))
@@ -211,7 +212,7 @@ class MCPServer:
                 {
                     "protocolVersion": requested or "2024-11-05",
                     "capabilities": {"tools": {"listChanged": False}},
-                    "serverInfo": {"name": "token-usage-monitor", "version": "1.6.2"},
+                    "serverInfo": {"name": "token-usage-monitor", "version": "1.7.0"},
                     "instructions": "Local Codex task, OpenAI-compatible API token, and rate-limit monitoring. Never stores prompts, responses, or API keys and never consumes reset credits.",
                 },
             )

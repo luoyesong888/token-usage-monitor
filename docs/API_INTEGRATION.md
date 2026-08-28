@@ -73,7 +73,27 @@ or DeepSeek total Token budget in Token监测 settings. The application calculat
 remaining = configured budget - locally recorded usage
 ```
 
-Budgets stay in local macOS preferences. Provider credentials are never requested.
+Budgets stay in local macOS preferences. Provider credentials are not required
+for Token ingestion.
+
+For DeepSeek, the macOS app can optionally validate an API key and show current
+balance plus available models. That key is stored only in macOS Keychain. DeepSeek
+does not provide an account-level historical Token endpoint, so detailed history
+still comes from each response's `usage` object.
+
+## Python helper
+
+The included dependency-free helper accepts OpenAI SDK response objects and
+forwards only their usage metadata:
+
+```python
+from scripts.api_usage_client import record_response_usage
+
+response = client.chat.completions.create(...)
+record_response_usage("deepseek", response, task_name="Knowledge base")
+```
+
+Provider summaries can be read from `GET /v1/summary?days=30`.
 
 ## Privacy checklist
 

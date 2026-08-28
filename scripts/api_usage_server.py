@@ -21,7 +21,7 @@ MAX_BODY_BYTES = 1_000_000
 
 
 class UsageHandler(BaseHTTPRequestHandler):
-    server_version = "TokenUsageMonitor/1.1"
+    server_version = "TokenUsageMonitor/1.2"
 
     @property
     def store(self) -> UsageStore:
@@ -49,6 +49,11 @@ class UsageHandler(BaseHTTPRequestHandler):
             days = max(1, min(365, int(query.get("days", ["30"])[0])))
             limit = max(1, min(2000, int(query.get("limit", ["200"])[0])))
             self._send(200, {"data": self.store.api_usage_history(days, limit)})
+            return
+        if parsed.path == "/v1/summary":
+            query = parse_qs(parsed.query)
+            days = max(1, min(365, int(query.get("days", ["30"])[0])))
+            self._send(200, {"days": days, "data": self.store.api_usage_summary(days)})
             return
         self._send(404, {"error": "not_found"})
 

@@ -94,6 +94,11 @@ class UsageStoreTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["task_name"], "测试 API 任务")
         self.assertEqual(rows[0]["total_tokens"], 150)
+        summary = self.store.api_usage_summary(30)
+        self.assertEqual(summary[0]["provider"], "deepseek")
+        self.assertEqual(summary[0]["request_count"], 1)
+        self.assertEqual(summary[0]["cached_input_tokens"], 40)
+        self.assertEqual(summary[0]["total_tokens"], 150)
 
 
 class AlertConfigurationTests(unittest.TestCase):

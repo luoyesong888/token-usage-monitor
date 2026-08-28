@@ -94,6 +94,44 @@ struct APIUsageRecord: Codable, Identifiable, Equatable {
     }
 }
 
+struct APIProviderSummary: Identifiable, Equatable {
+    var provider: String
+    var requestCount: Int
+    var inputTokens: Int
+    var cachedInputTokens: Int
+    var outputTokens: Int
+    var reasoningTokens: Int
+    var totalTokens: Int
+    var latestAt: Date?
+
+    var id: String { provider }
+
+    var displayName: String {
+        switch provider.lowercased() {
+        case "deepseek": return "DeepSeek"
+        case "openai": return "OpenAI"
+        case "anthropic": return "Anthropic"
+        default: return provider.isEmpty ? "其他 API" : provider
+        }
+    }
+}
+
+struct DeepSeekBalanceInfo: Codable, Identifiable, Equatable {
+    var currency: String
+    var totalBalance: String
+    var grantedBalance: String
+    var toppedUpBalance: String
+
+    var id: String { currency }
+}
+
+struct DeepSeekAccountSnapshot: Equatable {
+    var isAvailable: Bool
+    var balances: [DeepSeekBalanceInfo]
+    var models: [String]
+    var updatedAt: Date
+}
+
 struct RateWindow: Codable, Identifiable, Equatable {
     var limitID: String
     var limitName: String?

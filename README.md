@@ -5,7 +5,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
 
 本地优先、注重隐私的 Codex 插件与 macOS 菜单栏应用，用于监测任务 Token、API
-用量、额度窗口、刷新时间和额外刷新次数。提示词、回复正文和 API Key 均不会被保存。
+用量、额度窗口、刷新时间和额外刷新次数。提示词和回复正文不会被保存；可选的
+DeepSeek API Key 只保存在 macOS 钥匙串，不会进入用量数据库。
 
 ## 下载与安装
 
@@ -22,6 +23,8 @@
 - 菜单栏实时余量圆环，可选择 Codex、OpenAI API 或 DeepSeek API
 - 每个任务的 Token 总量、对话名称、模型和更新时间
 - OpenAI/DeepSeek 兼容 API 的输入、输出、缓存和推理 Token 记录
+- DeepSeek 账户余额、可用状态和当前模型列表（API Key 仅存 macOS 钥匙串）
+- 按平台汇总 API 调用次数、输入、输出、缓存命中和推理 Token
 - 可配置 API Token 总额度，并显示已用量、余量和剩余百分比
 - 14 天最近用量图、悬停详情、额度刷新倒计时和本地通知
 - 启动自动展开、顶部余量浮标、登录启动和 GitHub Release 自动检查
@@ -32,7 +35,10 @@ The repository also includes a native macOS 13+ menu-bar app in
 countdown, daily chart, local alerts, and optional launch at login while using
 the same local-only privacy model.
 
-Version 1.6 adopts a standard resizable macOS window, a 1024×1024 app icon with
+Version 1.7 adds a built-in DeepSeek account connection, with API keys stored in
+the macOS Keychain, live balance and available-model checks, provider-level token
+summaries, and a reusable Python response-usage recorder. Version 1.6 adopted a
+standard resizable macOS window, a 1024×1024 app icon with
 true transparent margins, and a dedicated always-front quota badge. The pin
 control now keeps only the selected remaining-quota number visible near the top
 of the screen; the main window retains normal window layering. macOS controls
@@ -76,10 +82,46 @@ download that opens without Gatekeeper review on other Macs.
 - Thread token-usage events when the connected App Server emits them
 - Per-task Codex totals with the user-facing conversation title
 - API response usage counters grouped by provider, model, and optional task name
+- DeepSeek account availability, balances, and current model list in the macOS app
 
-It does **not** request or store prompt bodies, response bodies, files, API keys, or account email addresses.
+It does **not** store prompt bodies, response bodies, files, or account email
+addresses. If the user explicitly connects DeepSeek, its API key is stored only
+in macOS Keychain and is never written to the usage database.
 
 ## External API usage
+
+### DeepSeek account connection
+
+Open the macOS app settings and paste a DeepSeek API key under **DeepSeek API**.
+The app validates it against DeepSeek's balance and model endpoints, then stores
+the key only in the macOS Keychain. The dashboard shows account availability,
+balances, and the number of currently available models. The key is never written
+to the usage database or sent to the local ingestion endpoint.
+
+DeepSeek does not expose an account-level historical token-usage endpoint. Exact
+token history therefore comes from the `usage` object returned with each model
+response. Record it with the included helper:
+
+```python
+from openai import OpenAI
+from scripts.api_usage_client import record_response_usage
+
+client = OpenAI(api_key="...", base_url="https://api.deepseek.com")
+response = client.chat.completions.create(
+    model="deepseek-v4-flash",
+    messages=[{"role": "user", "content": "Hello"}],
+)
+record_response_usage("deepseek", response, task_name="Demo")
+```
+
+Only model/request identifiers and token counters are sent to the loopback app;
+message content and credentials are excluded.
+
+References: [DeepSeek balance API](https://api-docs.deepseek.com/api/get-user-balance/),
+[model-list API](https://api-docs.deepseek.com/api/list-models/), and
+[response token usage](https://api-docs.deepseek.com/quick_start/token_usage/).
+
+### Generic OpenAI-compatible ingestion
 
 While the macOS app is running, a loopback-only endpoint accepts usage metadata:
 
@@ -120,6 +162,12 @@ the monitor never requests provider credentials.
 完整接入示例、字段说明和安全边界见
 [API Integration Guide](docs/API_INTEGRATION.md)。
 
+Provider totals for the last 30 days are also available at:
+
+```text
+GET http://127.0.0.1:47821/v1/summary?days=30
+```
+
 ## Runtime behavior
 
 The MCP server starts a background collector while the plugin is active. The
@@ -144,6 +192,7 @@ Use the `configure_usage_alerts` tool to change these settings. Set `TOKEN_USAGE
 - An unannounced extra reset can only be detected when the service grants it; the plugin cannot predict a future grant that the service has not exposed.
 - Exact live thread counters depend on `thread/tokenUsage/updated` events being visible to the connected App Server. Account and quota polling still works when those events are unavailable.
 - External API usage is recorded when the calling application posts the response `usage` object or invokes the `record_api_usage` MCP tool; the monitor does not intercept HTTPS traffic.
+- DeepSeek balance and model discovery require a valid API key; DeepSeek token history still depends on response-level `usage` ingestion because the provider does not expose an account history endpoint.
 - The plugin does not calculate subscription allowance as a fictional fixed token budget.
 
 ## Local tests

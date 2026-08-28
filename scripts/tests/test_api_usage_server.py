@@ -65,6 +65,12 @@ class APIUsageServerTests(unittest.TestCase):
         self.assertEqual(len(history["data"]), 1)
         self.assertEqual(history["data"][0]["total_tokens"], 15)
 
+        status, summary = self.read_json(f"{self.base_url}/v1/summary?days=30")
+        self.assertEqual(status, 200)
+        self.assertEqual(summary["data"][0]["provider"], "openai")
+        self.assertEqual(summary["data"][0]["request_count"], 1)
+        self.assertEqual(summary["data"][0]["total_tokens"], 15)
+
     def test_browser_cross_origin_preflight_is_rejected(self):
         request = Request(f"{self.base_url}/v1/usage", method="OPTIONS")
         with self.assertRaises(HTTPError) as caught:

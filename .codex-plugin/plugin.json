@@ -1,6 +1,6 @@
 {
   "name": "token-usage-monitor",
-  "version": "0.1.0+codex.20260825130830",
+  "version": "0.2.0+codex.20260828",
   "description": "Track Codex tasks, API token usage, and rate-limit resets locally in real time.",
   "author": {
     "name": "w93139"
@@ -9,7 +9,7 @@
   "interface": {
     "displayName": "Token\u76d1\u6d4b",
     "shortDescription": "Track task and API token usage locally.",
-    "longDescription": "A privacy-focused local monitor for per-task Codex token totals, OpenAI-compatible API usage including DeepSeek, daily history, rate-limit windows, reset credits, and threshold notifications. It stores usage metadata only and never stores prompts, responses, or API keys.",
+    "longDescription": "A privacy-focused local monitor for per-task Codex token totals, OpenAI-compatible API usage including DeepSeek, provider summaries, DeepSeek balance and model discovery, daily history, rate-limit windows, reset credits, and threshold notifications. Optional DeepSeek credentials stay in macOS Keychain; the usage database never stores credentials, prompts, or responses.",
     "developerName": "w93139",
     "category": "Productivity",
     "capabilities": [
