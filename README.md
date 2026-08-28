@@ -157,7 +157,8 @@ The macOS settings screen accepts an optional Token budget for OpenAI and
 DeepSeek. The API card then shows lifetime recorded usage, remaining Tokens, and
 remaining percentage. The menu-bar ring can independently display Codex,
 OpenAI, or DeepSeek remaining quota. Budgets stay in local macOS preferences;
-the monitor never requests provider credentials.
+provider credentials are not required for Token ingestion. The optional
+DeepSeek key used for balance and model discovery stays in macOS Keychain.
 
 完整接入示例、字段说明和安全边界见
 [API Integration Guide](docs/API_INTEGRATION.md)。

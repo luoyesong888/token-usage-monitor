@@ -26,7 +26,7 @@ Native macOS 13+ menu-bar companion for the Token Usage Monitor Codex plugin.
 - Selectable Codex, OpenAI, or DeepSeek quota source for the menu-bar ring
 - DeepSeek balance and model discovery with API keys stored in macOS Keychain
 - Per-provider API calls, input/output/cache/reasoning tokens, and recent activity
-- No prompt text, response text, email address, or API key collection
+- No prompt text, response text, email address, or API key in the usage database
 
 ## Build
 

@@ -213,7 +213,7 @@ class MCPServer:
                     "protocolVersion": requested or "2024-11-05",
                     "capabilities": {"tools": {"listChanged": False}},
                     "serverInfo": {"name": "token-usage-monitor", "version": "1.7.0"},
-                    "instructions": "Local Codex task, OpenAI-compatible API token, and rate-limit monitoring. Never stores prompts, responses, or API keys and never consumes reset credits.",
+                    "instructions": "Local Codex task, OpenAI-compatible API token, and rate-limit monitoring. The usage database never stores prompts, responses, or API keys and never consumes reset credits.",
                 },
             )
         elif method in ("notifications/initialized", "initialized"):
