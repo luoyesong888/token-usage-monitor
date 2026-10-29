@@ -2,6 +2,13 @@
 
 All notable changes to Token监测 are documented here.
 
+## [1.7.1] - 2026-10-30
+
+### Fixed
+
+- Detect the Codex CLI at ChatGPT's current `Resources/codex-cli/bin/codex` location.
+- Add the selected Codex launcher's directory to `PATH`, so NVM-installed launchers can resolve their sibling `node` binary when the app starts from Finder.
+
 ## [1.7.0] - 2026-08-28
 
 ### Added
