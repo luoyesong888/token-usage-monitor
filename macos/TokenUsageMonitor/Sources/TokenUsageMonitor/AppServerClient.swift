@@ -117,6 +117,16 @@ final class AppServerClient {
         let stdoutPipe = Pipe()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
+        var environment = ProcessInfo.processInfo.environment
+        let executableDirectory = URL(fileURLWithPath: executable)
+            .deletingLastPathComponent()
+            .path
+        let currentPath = environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        let pathEntries = currentPath.split(separator: ":").map(String.init)
+        if !pathEntries.contains(executableDirectory) {
+            environment["PATH"] = "\(executableDirectory):\(currentPath)"
+        }
+        process.environment = environment
         process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe
 
@@ -197,6 +207,10 @@ final class AppServerClient {
         }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         var candidates = [
+            "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
+            "\(home)/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
+            "/Applications/ChatGPT Classic.app/Contents/Resources/codex-cli/bin/codex",
+            "\(home)/Applications/ChatGPT Classic.app/Contents/Resources/codex-cli/bin/codex",
             "/Applications/ChatGPT.app/Contents/Resources/codex",
             "\(home)/Applications/ChatGPT.app/Contents/Resources/codex",
             "/Applications/Codex.app/Contents/Resources/codex",
